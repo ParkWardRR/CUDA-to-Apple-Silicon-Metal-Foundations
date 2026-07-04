@@ -1,18 +1,23 @@
-# CUDA-to-Apple-Silicon-Metal-Foundations
+# CUDA to Apple Silicon: Metal Foundations
 
-> Run your CUDA workloads natively on Apple Silicon. No NVIDIA GPU required.
+> Run CUDA-style workloads natively on Apple Silicon. No NVIDIA GPU required.
 
-A production-ready Python/Rust framework for hardware-accelerating massively parallel compute workloads on Apple Silicon (M1/M2/M3/M4/M5) Macs via Metal compute shaders. This library is organized around **Compute Patterns** -- each pattern represents a canonical CUDA programming paradigm, ported to Metal MSL and exposed through a unified `c2m_core` Python API.
+A production-ready Python/Rust framework for accelerating massively parallel compute workloads on Apple Silicon (M1/M2/M3/M4/M5) Macs with Metal compute shaders. It ports core CUDA compute patterns to Metal Shading Language (MSL) and exposes them through one unified Python API: `c2m_core`.
 
 ---
 
 ## Compute Patterns
 
-CUDA programming isn't one thing -- it's a collection of distinct **compute patterns**, each with its own data structures, memory access strategies, and parallelism model. A graph traversal looks nothing like a dense matrix multiply, which looks nothing like a prefix scan. NVIDIA ships separate libraries for each pattern (`cuGraph` for graphs, `cuBLAS` for dense math, `cuSPARSE` for sparse math, `CUB` for primitives), and porting CUDA code to another platform means understanding which pattern your code uses and translating the right set of idioms.
+CUDA workloads are not all built the same. Dense matrix math, graph traversal, prefix scans, and sparse operations each use different parallel patterns, memory layouts, and optimization strategies. NVIDIA ships separate libraries for each one -- `cuGraph` for graphs, `cuBLAS` for dense math, `cuSPARSE` for sparse math, `CUB` for primitives -- and porting CUDA code well means identifying the pattern your workload uses, then translating the right execution and memory model for that pattern.
 
-This framework is organized around these patterns. Each one maps a canonical CUDA programming paradigm onto Metal MSL, handles the hardware differences (warp width, shared memory size, atomic semantics), and exposes the result through a single `import c2m_core` Python API. Patterns marked **Done** are fully implemented and benchmark-validated. Patterns marked **Planned** have a clear architectural path and will be added in future releases.
+This project makes that explicit. Instead of treating all GPU code as one abstraction, it maps each workload class to a dedicated Metal implementation that handles the platform differences (execution width, shared memory constraints, atomic behavior) and exposes the result through a consistent `import c2m_core` API.
 
-The **CUDA Ecosystem** column shows which NVIDIA library or framework each pattern replaces, so you can quickly find the Metal equivalent of whatever CUDA tool you are currently using.
+| Status | Meaning |
+|---|---|
+| **Done** | Implemented and benchmark-validated against CPU reference (NumPy, SciPy, NetworkX) |
+| **Planned** | Architecturally defined and scheduled for a future release |
+
+The **CUDA Ecosystem** column shows which NVIDIA library or framework each pattern replaces, so you can find the Metal equivalent of whatever CUDA tool you are currently using.
 
 | # | Pattern | CUDA Ecosystem | Status | Classes |
 |---|---|---|---|---|
