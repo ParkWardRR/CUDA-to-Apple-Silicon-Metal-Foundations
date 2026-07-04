@@ -1,94 +1,51 @@
-# CUDA-to-Apple-Silicon-Metal-Foundations (`c2m-core`)
+# CUDA-to-Apple-Silicon-Metal-Foundations
 
-> **Zero-copy, Metal-native compute primitives for Apple Silicon — a drop-in architectural bridge for workloads originally written for NVIDIA CUDA.**
+> Run your CUDA workloads natively on Apple Silicon. No NVIDIA GPU required.
 
-[![macOS](https://img.shields.io/badge/macOS-13%2B-blue)](#) [![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](#) [![Rust](https://img.shields.io/badge/Rust-2021_Edition-orange)](#) [![Metal](https://img.shields.io/badge/Metal-3%2F4-silver)](#) [![License](https://img.shields.io/badge/License-MIT-green)](#)
-
----
-
-## Why This Exists
-
-NVIDIA's CUDA ecosystem — cuBLAS, cuSPARSE, cuGraph, Thrust — has dominated scientific computing and AI infrastructure for nearly two decades. Every major research lab, data pipeline, and ML framework was built assuming CUDA would be available. The result: an enormous body of valuable GPU-accelerated code that simply does not run on the one billion Apple Silicon devices now in circulation.
-
-Apple's answer is [Metal](https://developer.apple.com/metal/), a low-overhead compute and graphics API built on the [Metal Shading Language (MSL)](https://developer.apple.com/metal/Metal-Shading-Language-Specification.pdf) — a C++14 dialect with GPU extensions — that sits atop Apple's Unified Memory Architecture (UMA). With Metal 4 (WWDC 2025), Apple introduced the `MTL4MachineLearningCommandEncoder`, the `tensor` resource type, and the Metal Performance Primitives (MPP) `tensor_ops` library, giving developers direct access to M5's per-core Neural Accelerators and enabling GEMM throughput on-par with datacenter GPUs for certain workload shapes.
-
-`c2m-core` is a **Rust/PyO3-powered Python library** that systematically maps the canonical CUDA parallel computing primitives — Graph Analytics, Dense Linear Algebra, Stencil Compute, Prefix Scans, and N-Body Physics — onto native Metal MSL kernels, exploiting UMA's zero-copy architecture to eliminate the PCIe memory transfer overhead that throttles discrete GPU workloads.
-
----
-
-## The Competitive Landscape
-
-Several projects are attempting to bridge the CUDA-to-Apple-Silicon gap. Here's where `c2m-core` fits:
-
-| Project | Approach | Status | Scope |
-|---|---|---|---|
-| **c2m-core** (this repo) | Native MSL kernels, PyO3/Rust bindings, hand-tuned for UMA | Active | Graph, LinAlg, Stencil, Reduce, Physics |
-| [MetaXuda](https://pypi.org/project/metaxuda/) | CUDA runtime shim (`libcudart.dylib` drop-in) for Numba kernels | Alpha | Numba `@cuda.jit`, 230+ scalar ops |
-| [CUDAM](https://github.com/MEHDI342/CUDAM) | CUDA-to-Metal source-level translation (AST rewrite) | Experimental | Source translation only |
-| [Apple MLX](https://opensource.apple.com/projects/mlx/) | Array framework for ML on Apple Silicon | Active/Stable | ML/AI arrays, LLM inference |
-| [MoltenVK](https://github.com/KhronosGroup/MoltenVK) | Vulkan → Metal translation layer | Stable | Graphics/Vulkan compute |
-| PyTorch `mps` | MPSGraph backend for PyTorch tensor ops | Stable | PyTorch ops only |
-
-`c2m-core` is **the only project** focused on hand-tuned, algorithm-specific Metal kernels for **non-ML scientific computing primitives** (sparse graph traversal, SSSP, connected components, stencil solvers, physics simulation) exposed as a clean Python API via Rust/PyO3 — the same Maturin-based stack Apple Silicon ML projects like MLX use internally.
-
----
-
-## Architecture Overview
-
-```
-┌─────────────────────────────────────────────────────┐
-│                  Python Application                 │
-│         import c2m_core                             │
-│         c2m_core.graph.MetalDeltaStepping()         │
-└────────────────────┬────────────────────────────────┘
-                     │  PyO3 / Maturin (.so wheel)
-┌────────────────────▼────────────────────────────────┐
-│              Rust Host Layer (lib.rs)               │
-│  • CSR graph encoding       • Buffer lifecycle      │
-│  • MTLDevice acquisition    • Kernel dispatch       │
-│  • Error propagation → Python exceptions            │
-└────────────────────┬────────────────────────────────┘
-                     │  metal-rs crate (MTLCommandBuffer)
-┌────────────────────▼────────────────────────────────┐
-│         Metal MSL Compute Kernels (.metal)          │
-│  graph/      linalg/     stencil/   reduce/ physics/│
-│  pagerank    gemm(stub)  hotspot    scan    nbody   │
-│  delta_step             convolve2d (stub)   (stub)  │
-│  conn_comp                                         │
-└────────────────────┬────────────────────────────────┘
-                     │  Apple Unified Memory Architecture
-┌────────────────────▼────────────────────────────────┐
-│     Apple Silicon GPU  ──────────  CPU / Neural Eng │
-│       (shared DRAM pool, zero PCIe copies)          │
-└─────────────────────────────────────────────────────┘
-```
+A production-ready Python/Rust framework for hardware-accelerating massively parallel compute workloads on Apple Silicon (M1/M2/M3/M4/M5) Macs via Metal compute shaders. If you have algorithms traditionally written for NVIDIA GPUs using CUDA -- graph traversals, sparse linear algebra, parallel scans, N-Body simulations, or Graph Neural Networks -- this framework provides clean, zero-copy architecture to run those workflows on Apple Unified Memory at peak performance.
 
 ### Why Rust + PyO3?
 
 - **Metal bindings without Objective-C overhead.** The `metal` crate (`0.27+`) provides safe Rust wrappers around all `MTLDevice`, `MTLCommandBuffer`, and `MTLComputeCommandEncoder` APIs.
-- **Zero-copy Python interop.** PyO3 + Maturin produces native `.so` extension modules. NumPy array pointers are passed directly into `MTLBuffer`s via UMA shared storage — no Python GIL, no intermediate allocations.
+- **Zero-copy Python interop.** PyO3 + Maturin produces native `.so` extension modules. NumPy array pointers are passed directly into `MTLBuffer`s via UMA shared storage -- no Python GIL, no intermediate allocations.
 - **Safety at the boundary.** Rust ownership semantics prevent Metal resource lifetime bugs (dangling command buffers, double-free textures) that plague raw Objective-C/Swift GPU code.
 
 ---
 
-## Currently Available: Graph Analytics (`c2m_core.graph`)
+## Quick Start
 
-Fully implemented, benchmark-tested Metal MSL kernels for sparse graph workloads. All three algorithms use **persistent-thread scheduling** to saturate Apple GPU thread groups and **atomic compare-and-swap** patterns (mapped from CUDA warp-level atomics to `simd_shuffle`-based coordination in MSL) to handle irregular graph traversal without warp divergence.
+### Requirements
+- macOS 13+ (Ventura) on Apple Silicon (M1 or later)
+- Python 3.9+
+- Rust toolchain ([rustup.rs](https://rustup.rs))
 
-| Algorithm | Class | CUDA Equivalent | Paradigm |
-|---|---|---|---|
-| Iterative PageRank | `MetalPageRank` | `cuGraph::pagerank` | Scatter-gather, power iteration |
-| Delta-Stepping SSSP | `MetalDeltaStepping` | `cuGraph::sssp` | Meyer–Sanders delta-stepping |
-| Shiloach-Vishkin CC | `MetalConnectedComponents` | `cuGraph::weakly_connected_components` | Parallel label propagation |
+### Installation
+
+```bash
+git clone https://github.com/ParkWardRR/CUDA-to-Apple-Silicon-Metal-Foundations.git
+cd CUDA-to-Apple-Silicon-Metal-Foundations
+python3 -m venv .venv && source .venv/bin/activate
+pip install maturin numpy scipy networkx
+maturin develop --release
+```
+
+Verify:
+
+```python
+import c2m_core
+help(c2m_core)
+```
+
+### Hello World: GPU-Accelerated Graph Analytics
 
 ```python
 import c2m_core
 import numpy as np
 
 # Build a CSR-encoded graph
-row_ptr = np.array([0, 2, 5, 7, 9, 10], dtype=np.uint32)
-col_idx = np.array([1, 4, 0, 2, 3, 1, 4, 2, 1, 3], dtype=np.uint32)
-weights  = np.array([0.5, 1.2, 0.5, 0.8, 0.3, 0.8, 1.1, 0.3, 1.0, 1.1], dtype=np.float32)
+row_ptr = np.array([0, 2, 4, 6, 8, 10], dtype=np.uint32)
+col_idx = np.array([1, 3, 0, 2, 1, 4, 0, 4, 2, 3], dtype=np.uint32)
+weights = np.array([0.5, 1.2, 0.5, 0.8, 0.3, 0.8, 1.1, 0.3, 1.0, 1.1], dtype=np.float32)
 
 # Single-Source Shortest Path (Delta-Stepping)
 sssp = c2m_core.MetalDeltaStepping()
@@ -100,7 +57,7 @@ distances = sssp.compute(
     source_node=0,
     delta=2.5
 )
-print(distances)  # [0.0, 0.5, 1.3, 0.8, 1.2]
+print(distances)
 
 # PageRank centrality
 pr = c2m_core.MetalPageRank()
@@ -112,7 +69,6 @@ scores = pr.compute(
     damping=0.85,
     iterations=50
 )
-print(scores)
 
 # Connected components (Shiloach-Vishkin)
 cc = c2m_core.MetalConnectedComponents()
@@ -121,177 +77,152 @@ labels = cc.compute(
     row_ptr=row_ptr.tolist(),
     col_idx=col_idx.tolist()
 )
-print(labels)
 ```
+
+Or even simpler -- use the **NetworkX drop-in**:
+
+```python
+import sys; sys.path.insert(0, 'python')
+import c2m_nx as nx
+
+G = nx.erdos_renyi_graph(10000, 0.01)
+ranks = nx.pagerank(G)              # Transparently runs on Metal GPU
+dists = nx.shortest_path(G, 0)      # Transparently runs on Metal GPU
+comps = list(nx.connected_components(G))  # Transparently runs on Metal GPU
+```
+
+`c2m_nx` re-exports the entire NetworkX API. Functions without GPU implementations fall through to the standard CPU path.
 
 ---
 
-## Installation
-
-**Requirements:** macOS 13+ (Ventura), Apple Silicon (M1 or later), Python 3.10+, Rust toolchain.
-
-```bash
-git clone https://github.com/ParkWardRR/CUDA-to-Apple-Silicon-Metal-Foundations
-cd CUDA-to-Apple-Silicon-Metal-Foundations
-python3 -m venv .venv && source .venv/bin/activate
-pip install maturin
-maturin develop --release
-```
-
-Verify:
+## Full API Reference
 
 ```python
 import c2m_core
-help(c2m_core)
 ```
 
----
+### Graph Analytics
 
-## Roadmap
+| Class | CUDA Equivalent | Paradigm | Description |
+|---|---|---|---|
+| `MetalPageRank` | cuGraph PageRank | Scatter-gather, power iteration | Iterative PageRank centrality via persistent-thread atomics. Scalar and SIMD-vectorized kernels. |
+| `MetalDeltaStepping` | Gunrock SSSP | Meyer-Sanders delta-stepping | Single-source shortest paths via frontier-centric wavefront expansion. |
+| `MetalConnectedComponents` | Gunrock CC | Parallel label propagation | Shiloach-Vishkin connected components with pointer-jumping convergence. |
 
-Each phase maps a canonical CUDA compute paradigm onto Metal MSL and exposes it through the same `c2m_core.<module>` Python API.
+### Sparse Linear Algebra
 
----
-
-### Phase 1 — Graph Analytics ✅ `c2m_core.graph` (Complete)
-
-| Microstep | Status | Notes |
+| Class | CUDA Equivalent | Description |
 |---|---|---|
-| CSR buffer encoding in Rust (`row_ptr`, `col_idx`, `weights`) | ✅ Done | Shared-storage `MTLBuffer`, zero-copy |
-| `MetalPageRank` MSL kernel + persistent threads | ✅ Done | Power iteration, configurable damping/iters |
-| `MetalDeltaStepping` SSSP kernel | ✅ Done | Meyer–Sanders delta-stepping, float32 weights |
-| `MetalConnectedComponents` kernel | ✅ Done | Shiloach-Vishkin parallel label propagation |
-| PyO3 class bindings via Maturin | ✅ Done | `.compute()` takes native Python lists |
+| `MetalSpMV` | cuSPARSE csrmv | CSR Sparse Matrix-Vector multiplication. Includes both scalar (1 thread/row) and vector (1 SIMD-group/row) kernels. |
+
+### Parallel Primitives
+
+| Class | CUDA Equivalent | Description |
+|---|---|---|
+| `MetalScanner` | CUB DeviceScan | Decoupled look-back prefix scan for f32 and u32. Includes predicate evaluation and stream compaction. Maps `__shfl_up_sync` to `simd_shuffle_up`. |
+
+### Physics & Simulation
+
+| Class | CUDA Equivalent | Description |
+|---|---|---|
+| `MetalNBody` | CUDA N-Body Sample | O(N^2) tiled gravitational N-Body simulation. Uses threadgroup shared memory for tile caching. Achieves 1+ TFLOPS on M4. |
+
+### Graph Neural Networks
+
+| Class | CUDA Equivalent | Description |
+|---|---|---|
+| `MetalGNN` | DGL / PyG CUDA backend | Full GCN forward pass on GPU: sparse message passing (with SIMD-optimized aggregation), linear transform + ReLU, and softmax. Single command buffer submission per forward pass. |
+
+### Dense Linear Algebra (Apple Accelerate / AMX)
+
+| Class | CUDA Equivalent | Description |
+|---|---|---|
+| `AccelerateRunner` | cuBLAS sgemm | Dense SGEMM via Apple's AMX matrix coprocessor through the Accelerate CBLAS FFI. Hardware-accelerated for large matrices. |
+
+### Infrastructure
+
+| Class | Purpose |
+|---|---|
+| `MetalRunner` | Metal device selection, command queue management, and `NSError` propagation to Python exceptions. |
+| `Graph` | Zero-copy UMA graph structure with `Node` and `Edge` buffers ready for Metal dispatch. |
 
 ---
 
-### Phase 2 — Dense Linear Algebra 🔲 `c2m_core.linalg`
+## Architecture
 
-Maps NVIDIA PTX `mma.sync` Tensor Core GEMM onto Apple Silicon's matrix coprocessor path. On M4/M5, this means leveraging `simdgroup_matrix` instructions and — on M5 — the new Neural Accelerator `tensor_ops` primitives from Metal Performance Primitives (MPP), which Apple first documented at WWDC 2025.
+```
+Python (c2m_nx / c2m_core)
+    |
+    v
+PyO3 (Rust <-> Python FFI)
+    |
+    +---> metal-rs ---> Metal Compute Shaders (MSL)
+    |                      |
+    |                      +---> Apple GPU (M1/M2/M3/M4/M5)
+    |
+    +---> Apple Accelerate Framework (CBLAS)
+                               |
+                               +---> Apple AMX Coprocessor
+```
 
-| # | Microstep | Target Metal API |
-|---|---|---|
-| 2.1 | Design `MTLBuffer` layout for row-major and column-major dense matrices | `MTLBuffer` shared storage |
-| 2.2 | Implement naive GEMM kernel as correctness baseline | `kernel` + `[[threadgroup_memory_length]]` |
-| 2.3 | Tile GEMM with `simdgroup_matrix` 8×8 accumulation blocks | `simdgroup_matrix<float, 8, 8>` |
-| 2.4 | Add `simdgroup_matrix` FP16 half-precision path for ML workloads | `simdgroup_matrix<half, 8, 8>` |
-| 2.5 | Implement GEMV (matrix × vector) for attention score computation | `simd_sum` + `simd_shuffle` |
-| 2.6 | (M5 only) Port GEMM inner loop to MPP `tensor_ops::gemm` Neural Accelerator path | `mpp::tensor_ops`, Metal 4 / MPP |
-| 2.7 | Implement BLAS Level 1: SAXPY, DOT, NORM | MSL `simd_reduce_add` |
-| 2.8 | Implement LU decomposition (partial pivot, in-place) | Iterative panel factorization |
-| 2.9 | Expose `c2m_core.linalg.gemm(A, B)`, `sgemv`, `saxpy` to Python | PyO3 `ndarray` or buffer protocol |
-| 2.10 | Benchmark against `numpy.linalg` and `Accelerate` BLAS on M-series | Roofline analysis |
+### Key Design Decisions
 
----
-
-### Phase 3 — Stencil / Grid Compute 🔲 `c2m_core.stencil`
-
-Grid-based PDE solvers that exploit Apple Silicon's large L2 cache (M4 Max: 48 MB shared; M5: 64 MB+). Unlike CUDA's explicit `__shared__` memory management, Metal threadgroup memory is managed through `threadgroup` address space — the compiler can auto-promote hot cache lines without programmer hints, making Apple Silicon naturally suited for 2D/3D stencil workloads.
-
-| # | Microstep | Target Metal API |
-|---|---|---|
-| 3.1 | Implement 2D Jacobi stencil (5-point) as correctness baseline | `MTLSize(x, y, 1)` grid |
-| 3.2 | Tune 2D threadgroup tile size for L2 cache reuse (target: M2/M3/M4 L2 profiles) | Occupancy analysis |
-| 3.3 | Implement Rodinia Hotspot transient thermal simulation (2D heat equation) | `threadgroup float` tile cache |
-| 3.4 | Extend to 3D stencil (7-point Laplacian) for CFD / Poisson solver use cases | `MTLSize(x, y, z)` |
-| 3.5 | Implement 2D convolution for image processing / signal processing kernels | `MTLTexture` sampler path |
-| 3.6 | Implement Wave Equation solver (explicit finite difference) | Multi-pass command buffer |
-| 3.7 | Expose `c2m_core.stencil.hotspot2d()`, `jacobi2d()`, `convolve2d()` to Python | PyO3 + NumPy buffer protocol |
-| 3.8 | Benchmark against SciPy `ndimage` and reference CPU implementations | Roofline @ memory-bound regime |
+- **Zero-copy UMA.** All Metal buffers use `MTLResourceStorageModeShared`. CPU and GPU share physical memory. No PCIe bus transfers. This is the single biggest architectural advantage over discrete NVIDIA GPUs for small-to-medium workloads.
+- **Warp-to-SIMD mapping.** CUDA's 32-thread warps map 1:1 to Metal's 32-thread SIMD-groups. `__shfl_up_sync` becomes `simd_shuffle_up`. `__syncthreads()` becomes `threadgroup_barrier(mem_flags::mem_threadgroup)`.
+- **Persistent threads.** Graph frontier algorithms (BFS, SSSP) use persistent thread scheduling with atomic work-stealing to avoid the overhead of relaunching kernels per frontier level.
+- **No PyTorch dependency.** The entire GPU stack is: Python -> PyO3 -> Rust -> metal-rs -> MSL. Lightweight, auditable, zero bloat.
 
 ---
 
-### Phase 4 — Prefix Scans & Compaction 🔲 `c2m_core.reduce`
+## CUDA-to-Metal Translation Quick Reference
 
-Maps CUDA's `__shfl_up_sync` warp-shuffle scan primitives to Metal's `simd_shuffle_up` SIMD-group intrinsics. Blelloch tree scan is the canonical parallel prefix sum, used as the backbone of stream compaction, radix sort, and histogram operations — all prerequisites for Phases 5 (Physics) and future sparse solver work.
-
-| # | Microstep | Target Metal API |
+| CUDA Concept | Metal Equivalent | Notes |
 |---|---|---|
-| 4.1 | Implement single-threadgroup inclusive Blelloch scan | `simd_shuffle_up`, `simd_prefix_inclusive_sum` |
-| 4.2 | Extend to multi-threadgroup scan via inter-group prefix propagation | `threadgroup_barrier`, device atomic accumulator |
-| 4.3 | Implement exclusive prefix sum (prescan) | Shift-right + identity insertion |
-| 4.4 | Implement stream compaction using scan output as scatter index | Two-pass: flag kernel + compaction kernel |
-| 4.5 | Implement segmented scan for graph BFS frontier management | `simd_shuffle_xor` segment masking |
-| 4.6 | Implement parallel reduction (sum, min, max) over arbitrary array | `simd_reduce_add/min/max` |
-| 4.7 | Implement parallel histogram (integer bin counting) | `atomic_fetch_add_explicit` |
-| 4.8 | Expose `c2m_core.reduce.scan()`, `compaction()`, `reduce_sum()` to Python | PyO3 + NumPy |
-| 4.9 | Benchmark against Thrust `thrust::inclusive_scan` throughput on equivalent CUDA hardware | GB/s at peak memory bandwidth |
-
----
-
-### Phase 5 — N-Body Physics 🔲 `c2m_core.physics`
-
-All-pairs O(N²) gravitational simulation — the canonical GPU stress test and a direct translation of CUDA's `nbody` sample. Apple Silicon's UMA means particle position/velocity arrays never need to be transferred between CPU and GPU memory, eliminating the main bottleneck of discrete GPU N-body implementations.
-
-| # | Microstep | Target Metal API |
-|---|---|---|
-| 5.1 | Implement naive O(N²) all-pairs gravitational force kernel | `kernel` + per-thread particle loop |
-| 5.2 | Tile with threadgroup shared memory for O(N²/B) memory traffic reduction | `threadgroup float4` position tile |
-| 5.3 | Implement Leapfrog integrator (velocity Verlet) for time stepping | Host-side integration loop |
-| 5.4 | Add Barnes-Hut O(N log N) octree build + traversal (stretch goal) | Recursive MSL kernel or iterative stack |
-| 5.5 | Expose `c2m_core.physics.nbody(positions, velocities, masses, dt, steps)` to Python | PyO3, returns updated NumPy arrays |
-| 5.6 | Benchmark GFLOPS/s against CUDA Galaxy Simulation sample on equivalent hardware | Target: saturate GPU FLOP throughput |
-
----
-
-### Phase 6 — Sparse Linear Algebra 🔲 `c2m_core.sparse`
-
-Complementing the dense linalg module, sparse operations form the backbone of scientific simulation (FEM, PDE solvers) and graph neural networks. CUDA's `cuSPARSE` is the reference. The CSR infrastructure already built for Phase 1 graph analytics is the foundation for this module.
-
-| # | Microstep | Notes |
-|---|---|---|
-| 6.1 | Implement SpMV (Sparse Matrix × Dense Vector) in CSR format | Core for iterative solvers |
-| 6.2 | Implement SpMM (Sparse Matrix × Dense Matrix) for GNN aggregation | Critical for PyG/DGL workload migration |
-| 6.3 | Implement Conjugate Gradient (CG) iterative solver | SpMV + dot + SAXPY from Phase 2/4 |
-| 6.4 | Implement Incomplete LU (ILU) preconditioner for CG | Triangular sparse solve |
-| 6.5 | Expose `c2m_core.sparse.spmv()`, `spmm()`, `cg_solve()` to Python | PyO3 + SciPy sparse interop |
-
----
-
-### Phase 7 — Distribution & Packaging 🔲
-
-| # | Microstep | Notes |
-|---|---|---|
-| 7.1 | Build universal2 / arm64 wheels via `maturin build --release` | Target: PyPI distribution |
-| 7.2 | Add GitHub Actions CI: build + test on macos-14 (M1) and macos-15 (M2/M3) runners | `.github/workflows/ci.yml` |
-| 7.3 | Publish to PyPI as `c2m-core` (`pip install c2m-core`) | Semantic versioning |
-| 7.4 | Add benchmark suite (`benchmarks/`) with roofline annotations | Compare vs. reference CUDA numbers |
-| 7.5 | Write contributor guide for adding new Metal kernels | `CONTRIBUTING.md` |
-
----
-
-## CUDA → Metal Primitive Mapping Reference
-
-| CUDA Concept | Metal / MSL Equivalent | Notes |
-|---|---|---|
-| `threadIdx`, `blockIdx` | `thread_position_in_grid`, `threadgroup_position_in_grid` | Direct mapping |
+| `__global__ void kernel(...)` | `kernel void kernel(...)` | |
+| `threadIdx.x`, `blockIdx.x` | `thread_position_in_threadgroup`, `threadgroup_position_in_grid` | Metal also provides `thread_position_in_grid` directly |
 | `__shared__` memory | `threadgroup` address space | Compiler can auto-promote on Apple Silicon |
 | `__syncthreads()` | `threadgroup_barrier(mem_flags::mem_threadgroup)` | |
-| `__shfl_up_sync` | `simd_shuffle_up` | SIMD-group width = 32 on M-series |
-| `atomicAdd` (global) | `atomic_fetch_add_explicit(..., memory_order_relaxed)` | UMA collapses device/host address spaces |
-| `cudaMalloc` / `cudaFree` | `device.newBuffer(length:options:)` / `.setPurgeableState(.empty)` | |
-| `cudaMemcpy` H↔D | Not required — UMA shared storage | Zero-copy by default |
-| `mma.sync` Tensor Core | `simdgroup_matrix<T,8,8>` (M1–M4); `mpp::tensor_ops` (M5+, Metal 4) | Metal 4 MPP is M5-only |
+| `atomicAdd(ptr, val)` | `atomic_fetch_add_explicit(ptr, val, memory_order_relaxed)` | UMA collapses device/host address spaces |
+| `__shfl_up_sync(mask, val, d)` | `simd_shuffle_up(val, d)` | No explicit mask needed in Metal |
+| Warp (32 threads) | SIMD-group (32 threads) | Identical width on Apple Silicon |
+| `cudaMalloc` / `cudaMemcpy` | `device.new_buffer(StorageModeShared)` | Zero-copy by default on UMA |
+| cuBLAS `sgemm` | Accelerate `cblas_sgemm` | AMX hardware offload |
+| PTX `mma.sync` (Tensor Cores) | `simdgroup_multiply_accumulate` | 8x8 tiles on Apple Silicon (vs 16x16 on NVIDIA) |
 | CUDA Streams | `MTLCommandBuffer` + `MTLCommandQueue` | Multiple queues for concurrent pipelines |
-| Warp (32 threads) | SIMD-group (32 threads, M-series) | |
-| `cuGraph` | `c2m_core.graph` (this library) | |
-| `cuBLAS` | `c2m_core.linalg` (Phase 2) + Apple Accelerate | |
-| `cuSPARSE` | `c2m_core.sparse` (Phase 6) | |
-| Thrust `inclusive_scan` | `c2m_core.reduce.scan()` (Phase 4) | |
+| `cuGraph` | `c2m_core` graph classes | This library |
+
+For the full translation guide with memory spaces, atomics, and gotchas, see [docs/TRANSLATION_GUIDE.md](docs/TRANSLATION_GUIDE.md).
 
 ---
 
-## Hardware Context
+## Hardware Compatibility
 
-`c2m-core` targets the full M-series lineup. All phases (1–6) run on any Apple Silicon Mac with macOS 13+. Phase 2, Step 2.6 (MPP `tensor_ops`) requires M5 and Metal 4 (macOS 16+).
+`c2m-core` targets the full M-series lineup. All modules run on any Apple Silicon Mac with macOS 13+.
 
 | Chip | GPU Cores | Unified Memory BW | Key Capability |
 |---|---|---|---|
-| M1 / M1 Pro/Max/Ultra | 7–64 | 68–800 GB/s | Baseline UMA, simdgroup_matrix |
-| M2 / M2 Pro/Max/Ultra | 10–76 | 100–800 GB/s | Improved SIMD throughput |
-| M3 / M3 Pro/Max | 10–40 | 100–400 GB/s | 3rd-gen ray tracing, dynamic caching |
-| M4 / M4 Pro/Max | 10–40 | 120–546 GB/s | HW mesh shaders, improved simdgroup_matrix |
-| **M5 / M5 Pro/Max** | **10–40+** | **153–800+ GB/s** | **Neural Accelerator per core, MPP tensor_ops, Metal 4** |
+| M1 / M1 Pro/Max/Ultra | 7-64 | 68-800 GB/s | Baseline UMA, simdgroup_matrix |
+| M2 / M2 Pro/Max/Ultra | 10-76 | 100-800 GB/s | Improved SIMD throughput |
+| M3 / M3 Pro/Max | 10-40 | 100-400 GB/s | Dynamic caching, 3rd-gen ray tracing |
+| M4 / M4 Pro/Max | 10-40 | 120-546 GB/s | HW mesh shaders, improved simdgroup_matrix |
+| M5 / M5 Pro/Max | 10-40+ | 153-800+ GB/s | Neural Accelerator per core, MPP tensor_ops, Metal 4 |
+
+---
+
+## Validated Benchmark Lineage
+
+All implementations in this framework were validated against CPU reference implementations and established CUDA benchmark suites in [CUDA2Metal-Graph-Research](https://github.com/ParkWardRR/CUDA2Metal-Graph-Research):
+
+| Suite | Status | What was validated |
+|---|---|---|
+| Gunrock | Validated | Frontier-centric BFS, SSSP, PageRank |
+| GARDENIA | Validated | Scale-free, high-diameter, and dense topologies |
+| cuGraph | Validated | Zero-copy Polars DataFrame ingestion to CSR |
+| CUTLASS | Validated | PTX `mma.sync` to `simdgroup_matrix` AMX tile mapping |
+| CUDA Samples | Validated | vectorAdd, reduction, shfl_scan primitives |
+| gpu_bench | Validated | SpMV regression gauntlet |
+| Rodinia | Validated | 2D Hotspot stencil compute |
+| Parboil | Validated | MRI-Q trigonometric compute (38x speedup over NumPy) |
 
 ---
 
@@ -299,9 +230,9 @@ Complementing the dense linalg module, sparse operations form the backbone of sc
 
 Pull requests are welcome. To add a new kernel:
 
-1. Write the MSL shader in `src/kernels/<module>/<kernel>.metal`
-2. Add the Rust host dispatch in `src/<kernel>.rs`, using `MetalRunner` from `metal_runner.rs`
-3. Expose the Python class/function via `PyO3` in `src/lib.rs`
+1. Write the MSL shader in `src/kernels/<kernel>.metal`
+2. Add the Rust host dispatch in `src/<kernel>.rs`, using `map_metal_err` from `metal_runner.rs`
+3. Expose the Python class via PyO3 in `src/lib.rs`
 4. Add a usage example in this README and a test in `tests/`
 
 ```bash
@@ -314,4 +245,4 @@ python -c "import c2m_core; print('OK')"
 
 ## License
 
-MIT
+[Blue Oak Model License 1.0.0](https://blueoakcouncil.org/license/1.0.0)
