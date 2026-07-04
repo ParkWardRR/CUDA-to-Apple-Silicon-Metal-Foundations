@@ -8,6 +8,12 @@ A production-ready Python/Rust framework for hardware-accelerating massively par
 
 ## Compute Patterns
 
+CUDA programming isn't one thing -- it's a collection of distinct **compute patterns**, each with its own data structures, memory access strategies, and parallelism model. A graph traversal looks nothing like a dense matrix multiply, which looks nothing like a prefix scan. NVIDIA ships separate libraries for each pattern (`cuGraph` for graphs, `cuBLAS` for dense math, `cuSPARSE` for sparse math, `CUB` for primitives), and porting CUDA code to another platform means understanding which pattern your code uses and translating the right set of idioms.
+
+This framework is organized around these patterns. Each one maps a canonical CUDA programming paradigm onto Metal MSL, handles the hardware differences (warp width, shared memory size, atomic semantics), and exposes the result through a single `import c2m_core` Python API. Patterns marked **Done** are fully implemented and benchmark-validated. Patterns marked **Planned** have a clear architectural path and will be added in future releases.
+
+The **CUDA Ecosystem** column shows which NVIDIA library or framework each pattern replaces, so you can quickly find the Metal equivalent of whatever CUDA tool you are currently using.
+
 | # | Pattern | CUDA Ecosystem | Status | Classes |
 |---|---|---|---|---|
 | 1 | **Graph Analytics** | cuGraph, Gunrock | Done | `MetalPageRank`, `MetalDeltaStepping`, `MetalConnectedComponents` |
