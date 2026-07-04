@@ -2,7 +2,28 @@
 
 > Run your CUDA workloads natively on Apple Silicon. No NVIDIA GPU required.
 
-A production-ready Python/Rust framework for hardware-accelerating massively parallel compute workloads on Apple Silicon (M1/M2/M3/M4/M5) Macs via Metal compute shaders. If you have algorithms traditionally written for NVIDIA GPUs using CUDA -- graph traversals, sparse linear algebra, parallel scans, N-Body simulations, or Graph Neural Networks -- this framework provides clean, zero-copy architecture to run those workflows on Apple Unified Memory at peak performance.
+A production-ready Python/Rust framework for hardware-accelerating massively parallel compute workloads on Apple Silicon (M1/M2/M3/M4/M5) Macs via Metal compute shaders. This library is organized around **Compute Patterns** -- each pattern represents a canonical CUDA programming paradigm, ported to Metal MSL and exposed through a unified `c2m_core` Python API.
+
+---
+
+## Compute Patterns
+
+| # | Pattern | CUDA Ecosystem | Status | Classes |
+|---|---|---|---|---|
+| 1 | **Graph Analytics** | cuGraph, Gunrock | Done | `MetalPageRank`, `MetalDeltaStepping`, `MetalConnectedComponents` |
+| 2 | **Sparse Linear Algebra** | cuSPARSE | Done | `MetalSpMV` |
+| 3 | **Parallel Primitives** | CUB / Thrust | Done | `MetalScanner` (prefix scan, stream compaction) |
+| 4 | **N-Body Physics** | CUDA Samples | Done | `MetalNBody` |
+| 5 | **Graph Neural Networks** | DGL / PyG | Done | `MetalGNN` (GCN message passing, softmax) |
+| 6 | **Dense Linear Algebra (CPU)** | cuBLAS | Done | `AccelerateRunner` (AMX SGEMM via Accelerate) |
+| 7 | **Dense Linear Algebra (GPU)** | CUTLASS | Planned | Tiled GEMM via `simdgroup_matrix` 8x8 AMX tiles |
+| 8 | **Stencil / Grid Compute** | Rodinia, Parboil | Planned | 2D/3D stencils, heat equation, convolution |
+| 9 | **Sparse Solvers** | cuSPARSE, AmgX | Planned | SpMM, Conjugate Gradient, ILU preconditioner |
+| 10 | **Sort & Histogram** | CUB / Thrust | Planned | Radix sort, parallel histogram |
+| 11 | **FFT** | cuFFT | Planned | 1D/2D FFT via Metal or Accelerate vDSP |
+| 12 | **Source-to-Source Transpiler** | -- | Planned | Automatic CUDA kernel to MSL translation |
+
+---
 
 ### Why Rust + PyO3?
 
