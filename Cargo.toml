@@ -1,0 +1,12 @@
+[package]
+name = "c2m_core"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "c2m_core"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.29", features = ["auto-initialize"] }
+metal = "0.27.0"
