@@ -232,7 +232,7 @@ For the full translation guide with memory spaces, atomics, and gotchas, see [do
 
 ## Validated Benchmark Lineage
 
-All implementations in this framework were validated against CPU reference implementations and established CUDA benchmark suites in [CUDA2Metal-Graph-Research](https://github.com/ParkWardRR/CUDA2Metal-Graph-Research):
+All implementations in this framework were validated against CPU reference implementations (NumPy, SciPy, NetworkX) and established CUDA benchmark suites during an extensive internal research phase covering 8 major suites:
 
 | Suite | Status | What was validated |
 |---|---|---|

@@ -69,7 +69,7 @@
 
 ## Validated Benchmark Lineage
 
-All implementations in this framework were validated against CPU reference implementations and/or established CUDA benchmark suites in [CUDA2Metal-Graph-Research](https://github.com/ParkWardRR/CUDA2Metal-Graph-Research):
+All implementations in this framework were validated against CPU reference implementations (NumPy, SciPy, NetworkX) and established CUDA benchmark suites during an extensive internal research phase covering 8 major suites:
 
 | Benchmark | What was proven |
 |---|---|
